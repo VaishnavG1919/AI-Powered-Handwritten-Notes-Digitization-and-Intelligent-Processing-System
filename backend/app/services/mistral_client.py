@@ -8,6 +8,13 @@ the routers turn into a clean user-facing error instead of a stack trace.
 import base64
 import json
 from typing import Optional
+LANGUAGE_NAMES = {
+    "en": "English",
+    "hi": "Hindi",
+    "te": "Telugu",
+    "ta": "Tamil",
+    "kn": "Kannada",
+}
 
 import httpx
 
@@ -134,34 +141,111 @@ async def _chat(system: str, user: str, json_mode: bool = False, temperature: fl
 
 async def clean_and_structure(raw_ocr_markdown: str, language: str) -> dict:
     """
-    Sends raw OCR text to Mistral for spelling/grammar cleanup and
-    structuring into titled/headed markdown, with equations and tables
-    pulled out separately. Returns a dict with keys:
-    markdown, equations (list of {raw, latex}), tables (list of {rows}).
+    Sends raw OCR text to Mistral for OCR correction, translation,
+    and structuring into clean Markdown, with equations and tables
+    pulled out separately.
     """
+
+    # Convert language code into the actual target language name.
+    target_language = LANGUAGE_NAMES.get(language, language)
+
     system = (
-        "You are an assistant that cleans up raw OCR output from handwritten notes "
-        "and turns it into well-structured Markdown. Rules:\n"
-        "- Fix OCR spelling/spacing/punctuation errors, but NEVER change the meaning.\n"
-        "- NEVER invent information that is not implied by the OCR text.\n"
-        "- Preserve technical terms, numbers, and formulas exactly.\n"
-        "- Identify a title, headings, and subheadings where evident from structure.\n"
+        "You are an expert note editor, OCR correction assistant, "
+        "and professional translator.\n\n"
+
+        f"SELECTED TARGET LANGUAGE: {target_language}\n\n"
+
+        "TRANSLATION REQUIREMENTS:\n"
+        "- The OCR text may be written in a language different from "
+        "the selected target language.\n"
+        "- The selected target language is the language the FINAL "
+        "DIGITAL NOTES must be written in.\n"
+        "- Translate ALL readable textual content into the selected "
+        "target language.\n"
+        "- Translate the title, headings, paragraphs, sentences, "
+        "lists, and other explanatory text.\n"
+        "- Do NOT leave sentences in the original language.\n"
+        "- Do NOT produce mixed-language output.\n"
+        "- If the target language is Tamil, write the final textual "
+        "content in Tamil.\n"
+        "- If the target language is English, write the final textual "
+        "content in English.\n"
+        "- If the target language is Telugu, write the final textual "
+        "content in Telugu.\n"
+        "- If the target language is Hindi, write the final textual "
+        "content in Hindi.\n"
+        "- If the target language is Kannada, write the final textual "
+        "content in Kannada.\n"
+        "- Preserve proper nouns, formulas, numbers, URLs, and "
+        "technical terms when translation would be inappropriate.\n"
+        "- Before returning the result, verify that the Markdown "
+        "content is written in the selected target language.\n\n"
+
+        "OCR CLEANUP REQUIREMENTS:\n"
+        "- Fix obvious OCR spelling, spacing, and punctuation errors.\n"
+        "- Correct OCR mistakes using the context of the handwritten notes.\n"
+        "- NEVER change the original meaning.\n"
+        "- NEVER invent information that is not present or clearly "
+        "implied by the OCR text.\n"
+        "- Remove OCR noise, repeated artifacts, and meaningless characters.\n"
+        "- Preserve important facts, numbers, technical terms, and formulas.\n\n"
+
+        "STRUCTURING REQUIREMENTS:\n"
+        "- Create a meaningful title based only on the provided notes.\n"
+        "- The title MUST be written in the selected target language.\n"
+        "- Format the title as a Markdown H1 using '#'.\n"
+        "- Identify the major topics or sections in the notes.\n"
+        "- Use Markdown H2 headings ('##') for major sections.\n"
+        "- Use Markdown H3 headings ('###') for relevant subsections.\n"
+        "- Do not omit headings when the content contains distinct topics "
+        "or sections.\n"
         "- Convert list-like content into Markdown bullet or numbered lists.\n"
-        "- Represent mathematical expressions in LaTeX, wrapped in $...$ or $$...$$.\n"
-        "- Represent tables using Markdown table syntax.\n"
-        f"- The notes are in language code '{language}'; keep output in that language.\n"
-        "Respond ONLY with a JSON object: "
-        '{"markdown": "...", "equations": [{"raw": "...", "latex": "..."}], '
+        "- Keep paragraphs readable and logically organized.\n"
+        "- Represent mathematical expressions in LaTeX, wrapped in "
+        "$...$ or $$...$$.\n"
+        "- Represent tables using Markdown table syntax.\n\n"
+
+        "OUTPUT REQUIREMENTS:\n"
+        "- Return ONLY a valid JSON object.\n"
+        "- Do not return explanations outside the JSON object.\n"
+        "- The markdown field must contain the complete translated and "
+        "structured notes.\n\n"
+
+        '{"markdown": "...", '
+        '"equations": [{"raw": "...", "latex": "..."}], '
         '"tables": [{"rows": [["cell","cell"],["cell","cell"]]}]}'
     )
-    user = f"Raw OCR text:\n\n{raw_ocr_markdown}"
-    content = await _chat(system, user, json_mode=True, temperature=0.1)
+
+    user = (
+        f"TARGET LANGUAGE: {target_language}\n\n"
+        "Convert the following OCR text into clean, structured "
+        f"{target_language} digital notes.\n\n"
+        "IMPORTANT: Translate every readable sentence and piece of "
+        "explanatory text into the target language. Do not leave the "
+        "original language in the final Markdown unless it is a proper "
+        "noun, formula, number, URL, or necessary technical term.\n\n"
+        "OCR TEXT:\n\n"
+        f"{raw_ocr_markdown}"
+    )
+
+    content = await _chat(
+        system,
+        user,
+        json_mode=True,
+        temperature=0.0,
+    )
+
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
         # Fall back to treating the whole reply as markdown if the model
-        # didn't return valid JSON for some reason.
-        data = {"markdown": content, "equations": [], "tables": []}
+        # did not return valid JSON for some reason.
+        data = {
+            "markdown": content,
+            "equations": [],
+            "tables": [],
+        }
+
     return {
         "markdown": data.get("markdown", ""),
         "equations": data.get("equations", []),
