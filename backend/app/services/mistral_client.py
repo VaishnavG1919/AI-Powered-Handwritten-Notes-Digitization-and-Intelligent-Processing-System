@@ -15,7 +15,7 @@ from app.config import settings
 
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
 OCR_MODEL = "mistral-ocr-latest"
-CHAT_MODEL = "mistral-large-latest"
+CHAT_MODEL = "mistral-small-latest"
 
 
 class MistralError(Exception):
