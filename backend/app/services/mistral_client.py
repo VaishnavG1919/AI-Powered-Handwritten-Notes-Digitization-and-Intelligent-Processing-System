@@ -79,21 +79,32 @@ async def ocr_image(image_path: str) -> dict:
 
 async def _chat(system: str, user: str, json_mode: bool = False, temperature: float = 0.2) -> str:
     _require_key()
+
+    completion_args = {
+        "temperature": temperature,
+        "max_tokens": 4096,
+        "top_p": 1,
+    }
+
+    if json_mode:
+        completion_args["response_format"] = {"type": "json_object"}
+
     payload = {
         "model": CHAT_MODEL,
-        "temperature": temperature,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
+        "instructions": system,
+        "inputs": [
+            {"role": "user", "content": user}
         ],
+        "completion_args": completion_args,
+        "store": False,
     }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
 
     async with httpx.AsyncClient(timeout=90) as client:
         try:
             resp = await client.post(
-                f"{MISTRAL_BASE_URL}/chat/completions", headers=_headers(), json=payload
+                f"{MISTRAL_BASE_URL}/conversations",
+                headers=_headers(),
+                json=payload,
             )
         except httpx.RequestError as e:
             raise MistralError(f"Could not reach Mistral API: {e}")
@@ -103,14 +114,23 @@ async def _chat(system: str, user: str, json_mode: bool = False, temperature: fl
     if resp.status_code == 429:
         raise MistralError("Mistral API rate limit reached. Please try again shortly.")
     if resp.status_code >= 400:
-        raise MistralError(f"Mistral API error ({resp.status_code}): {resp.text[:300]}")
+        raise MistralError(
+            f"Mistral API error ({resp.status_code}): {resp.text[:300]}"
+        )
 
     body = resp.json()
-    try:
-        return body["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        raise MistralError("Unexpected response shape from Mistral API.")
 
+    try:
+        outputs = body["outputs"]
+        for output in outputs:
+            if output.get("type") == "message.output":
+                content = output.get("content", "")
+                if isinstance(content, str):
+                    return content
+
+        raise KeyError("message.output content not found")
+    except (KeyError, IndexError, TypeError):
+        raise MistralError("Unexpected response shape from Mistral API.")
 
 async def clean_and_structure(raw_ocr_markdown: str, language: str) -> dict:
     """

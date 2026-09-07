@@ -176,7 +176,7 @@ export default function Workspace() {
               }`}
             >
               {p.original_image_url && (
-                <img src={`${import.meta.env.VITE_API_URL}${p.original_image_url}`} className="w-full h-20 object-cover bg-ink-900/5" />
+                <img src={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}${p.original_image_url}`} className="w-full h-20 object-cover bg-ink-900/5" />
               )}
               <div className="p-2 flex items-center justify-between">
                 <span className="text-xs font-medium">Page {p.page_number}</span>
@@ -190,7 +190,7 @@ export default function Workspace() {
         <section className="flex-1 min-w-0 grid" style={{ gridTemplateColumns: showOriginal ? "1fr 1fr" : "1fr" }}>
           {showOriginal && activePage?.original_image_url && (
             <div className="border-r border-ink-900/10 dark:border-paper-100/10 overflow-y-auto thin-scroll p-4 bg-ink-900/[0.02] dark:bg-black/20">
-              <img src={`${import.meta.env.VITE_API_URL}${activePage.original_image_url}`} className="w-full rounded-lg shadow" />
+              <img src={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}${activePage.original_image_url}`} className="w-full rounded-lg shadow" />
             </div>
           )}
           <div className="overflow-y-auto thin-scroll p-6 relative">
