@@ -141,75 +141,110 @@ async def _chat(system: str, user: str, json_mode: bool = False, temperature: fl
 
 async def clean_and_structure(raw_ocr_markdown: str, language: str) -> dict:
     """
-    Sends raw OCR text to Mistral for OCR correction, translation,
-    and structuring into clean Markdown, with equations and tables
-    pulled out separately.
+    Faithfully digitizes OCR text.
+
+    The model may correct obvious OCR errors and translate the text
+    into the selected target language, but must NOT summarize,
+    paraphrase, expand, shorten, or invent content.
     """
 
-    # Convert language code into the actual target language name.
     target_language = LANGUAGE_NAMES.get(language, language)
 
     system = (
-        "You are an expert note editor, OCR correction assistant, "
-        "and professional translator.\n\n"
+        "You are a STRICT OCR transcription and translation engine.\n\n"
 
-        f"SELECTED TARGET LANGUAGE: {target_language}\n\n"
+        f"TARGET LANGUAGE: {target_language}\n\n"
 
-        "TRANSLATION REQUIREMENTS:\n"
-        "- The OCR text may be written in a language different from "
-        "the selected target language.\n"
-        "- The selected target language is the language the FINAL "
-        "DIGITAL NOTES must be written in.\n"
-        "- Translate ALL readable textual content into the selected "
-        "target language.\n"
-        "- Translate the title, headings, paragraphs, sentences, "
-        "lists, and other explanatory text.\n"
-        "- Do NOT leave sentences in the original language.\n"
-        "- Do NOT produce mixed-language output.\n"
-        "- If the target language is Tamil, write the final textual "
-        "content in Tamil.\n"
-        "- If the target language is English, write the final textual "
-        "content in English.\n"
-        "- If the target language is Telugu, write the final textual "
-        "content in Telugu.\n"
-        "- If the target language is Hindi, write the final textual "
-        "content in Hindi.\n"
-        "- If the target language is Kannada, write the final textual "
-        "content in Kannada.\n"
-        "- Preserve proper nouns, formulas, numbers, URLs, and "
-        "technical terms when translation would be inappropriate.\n"
-        "- Before returning the result, verify that the Markdown "
-        "content is written in the selected target language.\n\n"
+        "PRIMARY OBJECTIVE:\n"
+        "Convert the supplied OCR text into digital text while preserving "
+        "the SAME CONTENT as the source.\n\n"
 
-        "OCR CLEANUP REQUIREMENTS:\n"
-        "- Fix obvious OCR spelling, spacing, and punctuation errors.\n"
-        "- Correct OCR mistakes using the context of the handwritten notes.\n"
-        "- NEVER change the original meaning.\n"
-        "- NEVER invent information that is not present or clearly "
-        "implied by the OCR text.\n"
-        "- Remove OCR noise, repeated artifacts, and meaningless characters.\n"
-        "- Preserve important facts, numbers, technical terms, and formulas.\n\n"
+        "THIS IS NOT A NOTE-WRITING TASK.\n"
+        "THIS IS NOT A SUMMARIZATION TASK.\n"
+        "THIS IS NOT AN ESSAY-WRITING TASK.\n"
+        "THIS IS NOT A CONTENT-EXPANSION TASK.\n\n"
 
-        "STRUCTURING REQUIREMENTS:\n"
-        "- Create a meaningful title based only on the provided notes.\n"
-        "- The title MUST be written in the selected target language.\n"
-        "- Format the title as a Markdown H1 using '#'.\n"
-        "- Identify the major topics or sections in the notes.\n"
-        "- Use Markdown H2 headings ('##') for major sections.\n"
-        "- Use Markdown H3 headings ('###') for relevant subsections.\n"
-        "- Do not omit headings when the content contains distinct topics "
-        "or sections.\n"
-        "- Convert list-like content into Markdown bullet or numbered lists.\n"
-        "- Keep paragraphs readable and logically organized.\n"
-        "- Represent mathematical expressions in LaTeX, wrapped in "
-        "$...$ or $$...$$.\n"
-        "- Represent tables using Markdown table syntax.\n\n"
+        "ABSOLUTE CONTENT-PRESERVATION RULES:\n"
+        "- Output ONLY information that exists in the supplied OCR text.\n"
+        "- Do NOT add information.\n"
+        "- Do NOT remove information.\n"
+        "- Do NOT summarize.\n"
+        "- Do NOT paraphrase.\n"
+        "- Do NOT expand short statements into longer explanations.\n"
+        "- Do NOT explain the topic.\n"
+        "- Do NOT provide background information.\n"
+        "- Do NOT provide examples that are not in the OCR text.\n"
+        "- Do NOT provide conclusions that are not in the OCR text.\n"
+        "- Do NOT turn the content into an essay.\n"
+        "- Do NOT improve the author's ideas or arguments.\n"
+        "- Do NOT replace the author's sentences with new sentences.\n"
+        "- Do NOT change the order of sentences or paragraphs.\n"
+        "- Preserve every meaningful sentence and statement from the OCR.\n"
+        "- The amount of information in the output should closely match "
+        "the amount of information in the OCR.\n\n"
 
-        "OUTPUT REQUIREMENTS:\n"
-        "- Return ONLY a valid JSON object.\n"
-        "- Do not return explanations outside the JSON object.\n"
-        "- The markdown field must contain the complete translated and "
-        "structured notes.\n\n"
+        "OCR CORRECTION RULES:\n"
+        "- Correct only obvious OCR recognition errors.\n"
+        "- Correct obvious spelling, spacing, punctuation, or character "
+        "recognition mistakes.\n"
+        "- Use context only when necessary to correct an obvious OCR error.\n"
+        "- If a word is unclear, do NOT invent a better-sounding word.\n"
+        "- Do NOT rewrite grammatically awkward sentences simply because "
+        "you can make them sound better.\n"
+        "- Preserve technical terms, names, numbers, formulas, and "
+        "specific details.\n\n"
+
+        "TRANSLATION RULES:\n"
+        f"- Translate the existing OCR content into {target_language}.\n"
+        f"- The FINAL CONTENT must be in {target_language}.\n"
+        "- Translate the existing sentences faithfully.\n"
+        "- Do NOT summarize while translating.\n"
+        "- Do NOT paraphrase while translating.\n"
+        "- Do NOT add information while translating.\n"
+        "- Do NOT remove information while translating.\n"
+        "- Do NOT change the meaning or level of detail.\n"
+        "- Do NOT convert the text into a more elaborate version.\n"
+        "- If the OCR is already in the target language, preserve the "
+        "content and only correct obvious OCR errors.\n"
+        "- Preserve proper nouns, formulas, numbers, URLs, and necessary "
+        "technical terms where appropriate.\n\n"
+
+        "TITLE AND HEADING RULES:\n"
+        "- NEVER create a title that does not exist in the source.\n"
+        "- NEVER invent a heading.\n"
+        "- NEVER create an 'Introduction' section.\n"
+        "- NEVER create sections such as 'Conclusion', 'Discussion', "
+        "'Key Points', or 'Overview' unless they actually exist in "
+        "the source OCR text.\n"
+        "- If the handwritten source contains a title, preserve that "
+        "title and translate it if necessary.\n"
+        "- If the handwritten source contains a heading, preserve that "
+        "heading and translate it if necessary.\n"
+        "- If the source contains no title or heading, DO NOT create one.\n"
+        "- Do not create headings merely because a topic appears to have "
+        "multiple ideas.\n\n"
+
+        "STRUCTURE RULES:\n"
+        "- Preserve the original paragraph structure as closely as possible.\n"
+        "- Preserve the original sentence order.\n"
+        "- Preserve lists when they exist in the source.\n"
+        "- Preserve numbered items when they exist in the source.\n"
+        "- Preserve equations and mathematical expressions.\n"
+        "- Preserve tables when they exist in the source.\n"
+        "- Formatting must NEVER introduce new content.\n\n"
+
+        "FINAL VERIFICATION:\n"
+        "Before returning the result, compare the generated Markdown "
+        "against the supplied OCR text.\n"
+        "Make sure every output statement comes from the source.\n"
+        "Make sure no new explanation, example, title, heading, "
+        "summary, or conclusion has been added.\n"
+        "The result must represent the SAME handwritten content, "
+        "only cleaned and translated into the requested language.\n\n"
+
+        "OUTPUT FORMAT:\n"
+        "Return ONLY a valid JSON object.\n"
+        "Do not return any explanation outside the JSON object.\n\n"
 
         '{"markdown": "...", '
         '"equations": [{"raw": "...", "latex": "..."}], '
@@ -218,12 +253,12 @@ async def clean_and_structure(raw_ocr_markdown: str, language: str) -> dict:
 
     user = (
         f"TARGET LANGUAGE: {target_language}\n\n"
-        "Convert the following OCR text into clean, structured "
-        f"{target_language} digital notes.\n\n"
-        "IMPORTANT: Translate every readable sentence and piece of "
-        "explanatory text into the target language. Do not leave the "
-        "original language in the final Markdown unless it is a proper "
-        "noun, formula, number, URL, or necessary technical term.\n\n"
+        "Faithfully digitize and translate the OCR text below.\n\n"
+        "IMPORTANT:\n"
+        "Preserve the SAME content, sentences, information, order, "
+        "and details. Correct only obvious OCR mistakes and translate "
+        "the existing text. Do not write new content.\n\n"
+        "If there is no title or heading in the source, do not create one.\n\n"
         "OCR TEXT:\n\n"
         f"{raw_ocr_markdown}"
     )
@@ -238,8 +273,6 @@ async def clean_and_structure(raw_ocr_markdown: str, language: str) -> dict:
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
-        # Fall back to treating the whole reply as markdown if the model
-        # did not return valid JSON for some reason.
         data = {
             "markdown": content,
             "equations": [],

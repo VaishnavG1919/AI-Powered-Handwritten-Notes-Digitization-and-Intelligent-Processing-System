@@ -97,6 +97,22 @@ export async function uploadDocument(files: File[], title: string, language: str
   return data;
 }
 
+export async function addPages(documentId: string, files: File[]) {
+  const form = new FormData();
+
+  files.forEach((f) => form.append("files", f));
+
+  const { data } = await api.post<DocumentDetailOut>(
+    `/api/documents/${documentId}/pages`,
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    }
+  );
+
+  return data;
+}
+
 export async function listDocuments(params?: { q?: string; language?: string; status_filter?: string }) {
   const { data } = await api.get<DocumentOut[]>("/api/documents", { params });
   return data;

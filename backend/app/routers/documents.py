@@ -22,6 +22,15 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic"}
 ALLOWED_PDF_TYPE = "application/pdf"
 
+def _next_page_number(document_id: str, db: Session) -> int:
+    last_page = (
+        db.query(Page)
+        .filter(Page.document_id == document_id)
+        .order_by(Page.page_number.desc())
+        .first()
+    )
+    return (last_page.page_number + 1) if last_page else 1
+
 
 def _page_out(page: Page) -> PageOut:
     return PageOut(
@@ -118,6 +127,151 @@ async def upload_document(
     background_tasks.add_task(process_document, document.id)
 
     pages = db.query(Page).filter(Page.document_id == document.id).order_by(Page.page_number).all()
+    return DocumentDetailOut(
+        **DocumentOut.model_validate(document).model_dump(),
+        pages=[_page_out(p) for p in pages],
+    )
+
+@router.post("/{document_id}/pages", response_model=DocumentDetailOut)
+async def add_pages(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    document = _owned_document(document_id, db, current_user)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded.")
+
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    page_number = _next_page_number(document_id, db)
+    new_page_ids = []
+
+    try:
+        for upload in files:
+            data = await upload.read()
+
+            if len(data) == 0:
+                continue
+
+            if len(data) > max_bytes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{upload.filename}' exceeds the {settings.max_upload_mb}MB upload limit.",
+                )
+
+            content_type = upload.content_type or ""
+
+            # PDF: convert every PDF page into an image
+            if content_type == ALLOWED_PDF_TYPE or (
+                upload.filename or ""
+            ).lower().endswith(".pdf"):
+                try:
+                    pdf = fitz.open(stream=data, filetype="pdf")
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"'{upload.filename}' is not a valid PDF file.",
+                    )
+
+                if pdf.page_count == 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"'{upload.filename}' has no pages.",
+                    )
+
+                for pdf_page_index in range(pdf.page_count):
+                    pix = pdf[pdf_page_index].get_pixmap(dpi=200)
+                    img_bytes = pix.tobytes("png")
+
+                    path = save_upload_bytes(
+                        document.id,
+                        f"page_{page_number}.png",
+                        img_bytes,
+                    )
+
+                    new_page = Page(
+                        document_id=document.id,
+                        page_number=page_number,
+                        original_image_path=path,
+                    )
+
+                    db.add(new_page)
+                    db.flush()
+                    new_page_ids.append(new_page.id)
+
+                    page_number += 1
+
+            # Image files
+            elif content_type in ALLOWED_IMAGE_TYPES or (
+                upload.filename or ""
+            ).lower().endswith(
+                (".jpg", ".jpeg", ".png", ".webp", ".heic")
+            ):
+                path = save_upload_bytes(
+                    document.id,
+                    upload.filename or f"page_{page_number}",
+                    data,
+                )
+
+                new_page = Page(
+                    document_id=document.id,
+                    page_number=page_number,
+                    original_image_path=path,
+                )
+                db.add(new_page)
+                db.flush()
+                new_page_ids.append(new_page.id)
+
+                page_number += 1
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"'{upload.filename}' is an unsupported file type. "
+                        "Upload JPG, PNG, WEBP, or PDF."
+                    ),
+                )
+
+        if not new_page_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid pages were found in the uploaded files.",
+            )
+
+        document.page_count = page_number - 1
+        document.status = "processing"
+        db.commit()
+        db.refresh(document)
+
+        # Process only the newly added pages.
+        background_tasks.add_task(
+            process_document,
+            document.id,
+            new_page_ids,
+        )
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add pages: {e}",
+        )
+
+    pages = (
+        db.query(Page)
+        .filter(Page.document_id == document.id)
+        .order_by(Page.page_number)
+        .all()
+    )
+
     return DocumentDetailOut(
         **DocumentOut.model_validate(document).model_dump(),
         pages=[_page_out(p) for p in pages],
